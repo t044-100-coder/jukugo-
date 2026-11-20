@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>どんな なかまわけ？</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #f8fafc;
+            touch-action: manipulation;
+            user-select: none;
+        }
+
+        /* 先生用モードのヒント表示 */
+        .teacher-mode-active .hint {
+            display: block !important;
+        }
+
+        /* 箱がアクティブ（選択可能）な時のアニメーション */
+        @keyframes pulse-border {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+            100% { transform: scale(1); }
+        }
+        .box-active {
+            animation: pulse-border 1.5s infinite;
+            cursor: pointer;
+        }
+        .box-active:hover {
+            filter: brightness(0.95);
+        }
+
+        /* アニメーション用のクラス */
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- ヘッダー -->
+    <header class="bg-white border-b px-4 py-3 flex justify-between items-center shadow-sm">
+        <h1 class="text-xl md:text-2xl font-bold text-gray-800">どんな なかまわけ？</h1>
+        <div class="flex gap-2 text-sm md:text-base">
+            <button onclick="undo()" class="border border-gray-300 rounded px-3 py-1 hover:bg-gray-100 text-gray-700 bg-white shadow-sm transition-colors">ひとつ もどす</button>
+            <button onclick="resetGame()" class="border border-gray-300 rounded px-3 py-1 hover:bg-gray-100 text-gray-700 bg-white shadow-sm transition-colors">さいしょから</button>
+            <button onclick="toggleTeacherMode()" id="teacher-btn" class="border border-gray-300 rounded px-3 py-1 hover:bg-gray-100 text-gray-700 bg-white shadow-sm transition-colors flex items-center gap-1">
+                ⚙️ 先生用
+            </button>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="flex-grow flex flex-col items-center pt-8 px-4 w-full max-w-5xl mx-auto">
+        
+        <!-- メインステージ（カード表示エリア） -->
+        <div id="main-stage" class="w-full max-w-2xl bg-white border border-gray-300 rounded-xl shadow-sm h-48 md:h-56 flex flex-col justify-center items-center relative transition-all duration-300">
+            
+            <!-- 初期状態 / 次へ のテキスト -->
+            <div id="stage-message" class="text-xl md:text-2xl text-gray-500 font-medium">
+                カードを ひいてみよう
+            </div>
+
+            <!-- 引いたカードの表示 (最初は非表示) -->
+            <div id="active-card" class="hidden flex-col items-center fade-in">
+                <div id="card-kana" class="text-gray-500 text-sm md:text-base font-medium mb-1"></div>
+                <div id="card-kanji" class="text-5xl md:text-6xl font-bold text-gray-800 tracking-widest"></div>
+                <div class="text-gray-400 text-lg mt-2 font-medium">A ? B ?</div>
+                <!-- 先生用ヒント -->
+                <div id="card-hint" class="hint hidden absolute top-4 right-4 text-red-500 font-bold text-lg border border-red-500 rounded px-2"></div>
+            </div>
+
+        </div>
+
+        <!-- アクションボタン -->
+        <div class="mt-6 flex flex-col items-center">
+            <button id="action-btn" onclick="drawCard()" class="bg-[#1a2b4c] hover:bg-[#2a3b5c] text-white font-bold py-3 px-12 rounded-full text-xl md:text-2xl shadow-md transition-all duration-200">
+                カードを ひく
+            </button>
+            <div id="remaining-text" class="text-gray-500 mt-2 text-sm md:text-base font-medium">
+                のこり 12 まい
+            </div>
+        </div>
+
+        <!-- 振り分けボックス -->
+        <div class="w-full flex flex-col md:flex-row gap-6 mt-8 mb-10">
+            
+            <!-- Box A -->
+            <div id="box-a" class="flex-1 border-4 border-blue-500 rounded-xl bg-white p-4 min-h-[250px] relative transition-all duration-200 flex flex-col items-center">
+                <h2 class="text-3xl md:text-4xl font-bold text-blue-500 mb-2">A</h2>
+                <div id="box-a-content" class="flex flex-wrap justify-center content-start gap-3 w-full mt-4">
+                    <!-- ここにカードが入る -->
+                </div>
+            </div>
+
+            <!-- Box B -->
+            <div id="box-b" class="flex-1 border-4 border-orange-500 rounded-xl bg-white p-4 min-h-[250px] relative transition-all duration-200 flex flex-col items-center">
+                <h2 class="text-3xl md:text-4xl font-bold text-orange-500 mb-2">B</h2>
+                <div id="box-b-content" class="flex flex-wrap justify-center content-start gap-3 w-full mt-4">
+                    <!-- ここにカードが入る -->
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <script>
+        // 熟語データ（教科書p.34-35の内容 ＋ 子どもたちが迷う揺さぶり熟語）
+        // A：似た意味を表す熟語 / B：意味が対になる漢字
+        const initialCards = [
+            // まずは分かりやすい教科書例題からスタート（ルールを予想させる）
+            { kanji: "思考", kana: "しこう", type: "A" },
+            { kanji: "大小", kana: "だいしょう", type: "B" },
+            { kanji: "寒冷", kana: "かんれい", type: "A" },
+            { kanji: "高低", kana: "こうてい", type: "B" },
+            { kanji: "同等", kana: "どうとう", type: "A" },
+            { kanji: "男女", kana: "だんじょ", type: "B" },
+            
+            // ここから教科書p.35や、4年生が「どっちだろう？」と迷う熟語（議論のタネ！）
+            { kanji: "勝敗", kana: "しょうはい", type: "B" }, // 「勝つ」と「敗れる」で反対！（B）
+            { kanji: "良好", kana: "りょうこう", type: "A" }, // 「良い」と「好む（よい）」で似た意味！（A）
+            { kanji: "父母", kana: "ふぼ", type: "B" },       // 父と母は対になる関係！（B）※「同じ家族だからA？」と迷う子が出ます！
+            { kanji: "願望", kana: "がんぼう", type: "A" },   // 「願う」と「望む」で似た意味！（A）
+            { kanji: "売買", kana: "ばいばい", type: "B" },   // 「売る」と「買う」で対になる意味！（B）
+            { kanji: "言語", kana: "げんご", type: "A" }      // 「言う」と「語る」で似た意味！（A）※教科書p.35より
+        ];
+
+        let deck = [];
+        let currentCard = null;
+        let history = []; // { card: Object, box: 'A'|'B' }
+        let boxA_cards = [];
+        let boxB_cards = [];
+        let isTeacherMode = false;
+
+        // DOM要素の取得
+        const stageMessage = document.getElementById('stage-message');
+        const activeCardEl = document.getElementById('active-card');
+        const cardKanji = document.getElementById('card-kanji');
+        const cardKana = document.getElementById('card-kana');
+        const cardHint = document.getElementById('card-hint');
+        const actionBtn = document.getElementById('action-btn');
+        const remainingText = document.getElementById('remaining-text');
+        const boxA_DOM = document.getElementById('box-a');
+        const boxB_DOM = document.getElementById('box-b');
+        const boxA_Content = document.getElementById('box-a-content');
+        const boxB_Content = document.getElementById('box-b-content');
+        const teacherBtn = document.getElementById('teacher-btn');
+
+        // ゲームの初期化
+        function init() {
+            // シャッフルせず、配列の後ろからPopされるので逆順にセットする
+            deck = [...initialCards].reverse();
+            currentCard = null;
+            history = [];
+            boxA_cards = [];
+            boxB_cards = [];
+            
+            updateUI();
+        }
+
+        // リセットボタン
+        function resetGame() {
+            init();
+        }
+
+        // カードを引く
+        function drawCard() {
+            if (currentCard !== null) return; // すでに引いている場合は何もしない
+            if (deck.length === 0) return; // デッキが空の場合は何もしない
+
+            currentCard = deck.pop();
+            updateUI();
+        }
+
+        // 箱に入れる
+        function placeCard(boxType) {
+            if (currentCard === null) return; // カードを引いていない場合は何もしない
+
+            // 履歴に追加
+            history.push({ card: currentCard, box: boxType });
+
+            // 箱に追加
+            if (boxType === 'A') {
+                boxA_cards.push(currentCard);
+            } else {
+                boxB_cards.push(currentCard);
+            }
+
+            // カードをリセット
+            currentCard = null;
+            updateUI();
+        }
+
+        // ボタンから正しい箱へ自動的に入れる関数
+        function putInCorrectBox() {
+            if (currentCard !== null) {
+                placeCard(currentCard.type);
+            }
+        }
+
+        // ひとつもどす（Undo）
+        function undo() {
+            if (history.length === 0) return;
+
+            // 直前の状態が「カードを引いた直後」の場合
+            if (currentCard !== null) {
+                deck.push(currentCard);
+                currentCard = null;
+                updateUI();
+                return;
+            }
+
+            // 直前の状態が「箱に入れた後」の場合
+            const lastAction = history.pop();
+            if (lastAction.box === 'A') {
+                boxA_cards.pop();
+            } else {
+                boxB_cards.pop();
+            }
+            
+            // 引いた状態に戻す
+            currentCard = lastAction.card;
+            updateUI();
+        }
+
+        // 先生用モード切替
+        function toggleTeacherMode() {
+            isTeacherMode = !isTeacherMode;
+            if (isTeacherMode) {
+                document.body.classList.add('teacher-mode-active');
+                teacherBtn.classList.add('bg-gray-200');
+            } else {
+                document.body.classList.remove('teacher-mode-active');
+                teacherBtn.classList.remove('bg-gray-200');
+            }
+        }
+
+        // 画面の更新
+        function updateUI() {
+            // 残り枚数の更新
+            remainingText.textContent = `のこり ${deck.length} まい`;
+
+            if (currentCard) {
+                // カードを引いている状態
+                stageMessage.classList.add('hidden');
+                activeCardEl.classList.remove('hidden');
+                
+                // アニメーションをリセットして再適用
+                activeCardEl.classList.remove('fade-in');
+                void activeCardEl.offsetWidth; // リフロー強制
+                activeCardEl.classList.add('fade-in');
+
+                cardKanji.textContent = currentCard.kanji;
+                cardKana.textContent = currentCard.kana;
+                cardHint.textContent = `正解: ${currentCard.type}`;
+
+                actionBtn.textContent = "はこに 入れる";
+                actionBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                actionBtn.setAttribute('onclick', 'putInCorrectBox()'); // 正しい箱へ入れる処理に変更
+
+            } else {
+                // カードを引いていない状態
+                activeCardEl.classList.add('hidden');
+                stageMessage.classList.remove('hidden');
+
+                if (deck.length === 0 && history.length > 0) {
+                    stageMessage.textContent = "どんな なかまわけ だったかな？";
+                    actionBtn.textContent = "おしまい";
+                    actionBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    actionBtn.removeAttribute('onclick');
+                } else {
+                    stageMessage.textContent = history.length === 0 ? "カードを ひいてみよう" : "つぎは どっちかな？";
+                    actionBtn.textContent = "カードを ひく";
+                    actionBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    actionBtn.setAttribute('onclick', 'drawCard()');
+                }
+            }
+
+            // 箱の中身を描画
+            renderBox(boxA_Content, boxA_cards);
+            renderBox(boxB_Content, boxB_cards);
+        }
+
+        // 箱の中のカードを描画する関数
+        function renderBox(container, cards) {
+            container.innerHTML = '';
+            cards.forEach(card => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'bg-gray-100 rounded-lg px-4 py-2 border-2 border-gray-300 shadow-sm flex flex-col items-center fade-in';
+                // 先生モードの時は、間違った箱に入れていると赤字になる仕組み
+                const isWrong = isTeacherMode && ((container === boxA_Content && card.type !== 'A') || (container === boxB_Content && card.type !== 'B'));
+                const textColor = isWrong ? 'text-red-500' : 'text-gray-800';
+                
+                cardEl.innerHTML = `
+                    <div class="text-[10px] md:text-xs text-gray-500 font-medium">${card.kana}</div>
+                    <div class="text-xl md:text-2xl font-bold ${textColor}">${card.kanji}</div>
+                `;
+                container.appendChild(cardEl);
+            });
+        }
+
+        // 初期化実行
+        window.onload = init;
+    </script>
+</body>
+</html>
